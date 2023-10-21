@@ -19,13 +19,23 @@ const char* password = WIFI_PASSWORD;
 
 // stdup used in setup() because of the following warning:
 // warning: ISO C++ forbids converting a string constant to 'char*' [-Wwrite-strings]
-char* host;
-int httpPort;
-char* mntpnt;
-char* psw;
-char* srcSTR;
+#ifdef HOST_1
+  char* host_1;
+  int httpPort_1;
+  char* mntpnt_1;
+  char* psw_1;
+  char* srcSTR_1;
+#endif
+#ifdef HOST_2
+  char* host_2;
+  int httpPort_2;
+  char* mntpnt_2;
+  char* psw_2;
+  char* srcSTR_2;
+#endif
 
-NTRIPServer ntrip_s;
+NTRIPServer ntrip_server_1;
+NTRIPServer ntrip_server_2;
 HardwareSerial & RtcmSerial = Serial2;
 
 const uint8_t newline_byte = byte('\n');
@@ -41,17 +51,18 @@ void reset_counters_buffers() {
   }
 } // end of reset_counters_buffers()
 
-void send_buffer_to_ntrip_server() {
+void send_buffer_to_ntrip_server(char* host, int httpPort, char* mntpnt, char* psw, char* srcSTR, NTRIPServer ntrip_server) {
   // send the buffer to the NTRIP server
 
-  if (ntrip_s.connected()) {
-    ntrip_s.write(byte_buffer, byte_count); 
+  if (ntrip_server.connected()) {
+    ntrip_server.write(byte_buffer, byte_count); 
     if (DEBUG){Serial.print(byte_count); Serial.println(F(" packet sent."));}
   } else { // if we are not connected to the NTRIP server, try to reconnect
-    ntrip_s.stop();
+    ntrip_server.stop();
+    Serial.println(host);
     Serial.println("reconnect");
     Serial.println("Subscribing MountPoint");
-    if (!ntrip_s.subStation(host, httpPort, mntpnt, psw, srcSTR)) {
+    if (!ntrip_server.subStation(host, httpPort, mntpnt, psw, srcSTR)) {
       delay(100);
     } else {
       Serial.println("Subscribing MountPoint is OK");
@@ -104,11 +115,22 @@ void read_serial() {
 } // end of read_serial()
 
 void setup() {
-  host = strdup(HOST);
-  httpPort = HTTP_PORT;
-  mntpnt = strdup(MNT_PNT);
-  psw = strdup(PSW);
-  srcSTR = strdup(SRC_STR);
+  bool mntpnt_subscribed = false; // flag to keep track of subscription status
+  
+  #ifdef HOST_1
+    host_1 = strdup(HOST_1);
+    httpPort_1 = HTTP_PORT_1;
+    mntpnt_1 = strdup(MNT_PNT_1);
+    psw_1 = strdup(PSW_1);
+    srcSTR_1 = strdup(SRC_STR_1);
+  #endif
+  #ifdef HOST_2
+    host_2 = strdup(HOST_2);
+    httpPort_2 = HTTP_PORT_2;
+    mntpnt_2 = strdup(MNT_PNT_2);
+    psw_2 = strdup(PSW_2);
+    srcSTR_2 = strdup(SRC_STR_2);
+  #endif
 
   Serial.begin(115200);
   RtcmSerial.begin(115200);
@@ -117,24 +139,48 @@ void setup() {
   WiFi.begin(ssid,password);
   reconnect_wifi();
 
-  Serial.print("Subscribing MountPoint: ");
-  Serial.print(mntpnt);
-  Serial.print(" : ");
-  Serial.println(psw);
-  
-  if (!ntrip_s.subStation(host, httpPort, mntpnt,psw,srcSTR)) {
+  #ifdef HOST_1
+    Serial.print("Subscribing MountPoint: ");
+    Serial.print(mntpnt_1);
+    Serial.print(" : ");
+    Serial.println(psw_1);
+    Serial.println(host_1);
+    if (ntrip_server_1.subStation(host_1, httpPort_1, mntpnt_1, psw_1, srcSTR_1)) {
+      mntpnt_subscribed = true;
+      Serial.println("Subscribing MountPoint is OK");
+    }
+  #endif
+
+  #ifdef HOST_2
+    Serial.print("Subscribing MountPoint: ");
+    Serial.print(mntpnt_2);
+    Serial.print(" : ");
+    Serial.println(psw_2);
+    Serial.println(host_2);
+    if (ntrip_server_2.subStation(host_2, httpPort_2, mntpnt_2, psw_2, srcSTR_2)) {
+      mntpnt_subscribed = true;
+      Serial.println("Subscribing MountPoint is OK");
+    }
+  #endif
+
+  if (!mntpnt_subscribed) {
     // if we can't subscribe to the NTRIP server, restart the device
+    Serial.println("Failed to subscribe. Restarting device...");
     delay(15000);
     ESP.restart();
   }
-  Serial.println("Subscribing MountPoint is OK");
 }
 
 void loop() {
   if ((messages_in_buffer > 0)) {
     // if there are messages in the buffer send them to the NTRIP server
     if (DEBUG){Serial.print(messages_in_buffer); Serial.println(F(" messages in buffer."));}
-    send_buffer_to_ntrip_server();
+    #ifdef HOST_1
+      send_buffer_to_ntrip_server(host_1, httpPort_1, mntpnt_1, psw_1, srcSTR_1, ntrip_server_1);
+    #endif
+    #ifdef HOST_2
+      send_buffer_to_ntrip_server(host_2, httpPort_2, mntpnt_2, psw_2, srcSTR_2, ntrip_server_2);
+    #endif
     reconnect_wifi(); // reconnect to WiFi if we lost the connection
     reset_counters_buffers(); // reset the counters and whipe the buffer
   } // end of if messages_in_buffer > 0
